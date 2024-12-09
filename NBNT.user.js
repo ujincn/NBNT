@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NBNT: 新版百度网盘共享文件库目录导出工具
 // @namespace    http://tampermonkey.net/
-// @version      0.263
+// @version      0.264
 // @description  用于导出百度网盘共享文件库目录和文件列表
 // @author       UJiN
 // @match        https://pan.baidu.com/disk*
@@ -512,6 +512,7 @@
     async function fetchSubdirectories(uk, msgId, fsId, gid, title, depth) {
         console.log(`开始获取子目录信息: ${title}, 深度: ${depth}`);
         
+        const startTime = performance.now(); // 添加开始时间记录
         const progressBar = createProgressBar();
         progressBar.show();
 
@@ -519,7 +520,8 @@
             name: title,
             children: [],
             level: 0,
-            isRoot: true
+            isRoot: true,
+            startTime: startTime // 保存开始时间到结果对象
         };
 
         let totalDirectories = 0;
@@ -591,7 +593,8 @@
             progressBar.updateText('目录获取完成！');
             setTimeout(() => progressBar.hide(), 2000);
             return {
-                tree: formatDirectoryTree(result)
+                tree: formatDirectoryTree(result), // result 对象中包含了 startTime
+                startTime: startTime
             };
         } catch (error) {
             progressBar.updateText('获取目录时发生错误！');
@@ -634,38 +637,9 @@
         }
     }
 
-    // 同样修改 formatDirectoryTree 函数中的 formatDir 函数
-    function formatDir(node, prefix = '', isLastArray = []) {
-        if (node.isRoot) {
-            result += `${cleanFileName(node.name)}\n`;
-            // 根节点的子节点不需要额外的前缀
-            if (node.children && node.children.length > 0) {
-                node.children.forEach((child, index) => {
-                    const isLast = index === node.children.length - 1;
-                    const connector = isLast ? SYMBOLS.last : SYMBOLS.tee;
-                    formatDir(child, '', [isLast]);
-                });
-            }
-        } else {
-            const connector = isLastArray[isLastArray.length - 1] ? SYMBOLS.last : SYMBOLS.tee;
-            result += `${prefix}${connector}${cleanFileName(node.name)}\n`;
-
-            if (node.children && node.children.length > 0) {
-                node.children.forEach((child, index) => {
-                    const isLast = index === node.children.length - 1;
-                    const newPrefix = prefix + (isLastArray[isLastArray.length - 1] ? SYMBOLS.space : SYMBOLS.branch);
-                    formatDir(child, newPrefix, [...isLastArray, isLast]);
-                });
-            }
-        }
-    }
-
     // 修改格式化函数
     function formatDirectoryTree(dir) {
-        let result = '';
-        const currentTime = new Date().toLocaleString();
-        
-        // 定义树形结构符号
+        const formatStartTime = performance.now(); // 添加格式化开始时间
         const SYMBOLS = {
             space:  '    ',
             branch: '│   ',
@@ -673,17 +647,54 @@
             last:   '└──'
         };
         
+        let result = '';
+        const currentTime = new Date().toLocaleString();
+        
         // 添加标题和信息头
         result += `目录结构导出清单\n`;
         result += `导出时间：${currentTime}\n`;
         result += `根目录：${dir.name}\n`;
         result += `${'='.repeat(50)}\n\n`;
 
+        // 内部函数，用于格式化目录
+        function formatDir(node, prefix = '', isLastArray = []) {
+            if (node.isRoot) {
+                result += `${cleanFileName(node.name)}\n`;
+                if (node.children && node.children.length > 0) {
+                    node.children.forEach((child, index) => {
+                        const isLast = index === node.children.length - 1;
+                        formatDir(child, '', [isLast]);
+                    });
+                }
+            } else {
+                const connector = isLastArray[isLastArray.length - 1] ? SYMBOLS.last : SYMBOLS.tee;
+                result += `${prefix}${connector}${cleanFileName(node.name)}\n`;
+
+                if (node.children && node.children.length > 0) {
+                    node.children.forEach((child, index) => {
+                        const isLast = index === node.children.length - 1;
+                        const newPrefix = prefix + (isLastArray[isLastArray.length - 1] ? SYMBOLS.space : SYMBOLS.branch);
+                        formatDir(child, newPrefix, [...isLastArray, isLast]);
+                    });
+                }
+            }
+        }
+
+        // 调用格式化函数
         formatDir(dir, '', []);
         
-        // 添加页脚
+        const endTime = performance.now(); // 记录结束时间
+        const formatTime = ((endTime - formatStartTime) / 1000).toFixed(2); // 格式化耗时
+        const totalTime = ((endTime - (dir.startTime || formatStartTime)) / 1000).toFixed(2); // 总耗时
+        
+        // 添加页脚和统计信息
         result += `\n${'='.repeat(50)}\n`;
-        result += `共计 ${countDirectories(dir)} 个目录\n`;
+        result += `统计信息：\n`;
+        result += `目录数量：${countDirectories(dir)} 个\n`;
+        result += `格式化耗时：${formatTime} 秒\n`;
+        if (dir.startTime) { // 如果有开始时间才显示总耗时
+            result += `总处理耗时：${totalTime} 秒\n`;
+        }
         
         return result;
     }
