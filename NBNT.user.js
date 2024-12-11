@@ -4,6 +4,7 @@
 // @version      0.264
 // @description  用于导出百度网盘共享文件库目录和文件列表
 // @author       UJiN
+// @license      MIT
 // @match        https://pan.baidu.com/disk*
 // @icon         https://nd-static.bdstatic.com/m-static/v20-main/favicon-main.ico
 // @grant        GM_xmlhttpRequest
