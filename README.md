@@ -32,16 +32,16 @@
 ## 使用方法
 
 1. 打开百度网盘网页版
-![alt text](imgs/01.png)
+![img01](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/01.png)
 2. 进入共享文件库页面
-![alt text](imgs/02.png) ![alt text](imgs/03.png)
+![img02](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/02.png) ![img03](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/03.png)
 3. 选择要导出的目录
-![alt text](imgs/04.png)
+![img04](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/04.png)
 4. 点击工具栏中的按钮：
    - 【检查目录】：查看选中目录基本信息
    - 【导出目录】：仅导出选中目录及子目录结构
    - 【导出全部】：导出选中目录及子目录和文件列表
-![alt text](imgs/05.png)
+![img05](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/05.png)
 
 ## 注意事项
 
