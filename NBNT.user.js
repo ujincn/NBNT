@@ -122,6 +122,11 @@
         return {
             show: () => progressContainer.style.display = 'block',
             hide: () => progressContainer.style.display = 'none',
+            remove: () => {
+                if (progressContainer.parentNode) {
+                    progressContainer.parentNode.removeChild(progressContainer);
+                }
+            },
             updateProgress: (current, total) => {
                 const percentage = Math.min((current / total) * 100, 100);
                 progressBarInner.style.width = `${percentage}%`;
@@ -143,11 +148,9 @@
             isProcessing = true;
 
             try {
-                // 修改选择器以匹配按钮出现的时机
                 const operateDiv = document.querySelector('.im-file-nav__operate');
                 const downloadButton = operateDiv?.querySelector('.u-icon-download')?.closest('button');
                 
-                // 如果找不到必要元素，快速返回
                 if (!operateDiv || !downloadButton) {
                     isProcessing = false;
                     return;
@@ -156,15 +159,11 @@
                 const existingCheckButton = document.querySelector('#check-dir-button');
                 const existingFetchButton = document.querySelector('#fetch-dir-button');
                 
-                // 如果按钮已存在，快速返回
                 if (existingCheckButton || existingFetchButton) {
                     isProcessing = false;
                     return;
                 }
 
-                console.log("找到操作栏，添加按钮...");
-                
-                // 创建检查按钮
                 const checkButton = document.createElement('button');
                 checkButton.id = 'check-dir-button';
                 checkButton.type = 'button';
@@ -174,7 +173,6 @@
                     <span>检查目录</span>
                 `;
                 
-                // 创建获取按钮
                 const fetchButton = document.createElement('button');
                 fetchButton.id = 'fetch-dir-button';
                 fetchButton.type = 'button';
@@ -184,7 +182,6 @@
                     <span>导出目录</span>
                 `;
 
-                // 创建获取全部按钮
                 const fetchAllButton = document.createElement('button');
                 fetchAllButton.id = 'fetch-all-button';
                 fetchAllButton.type = 'button';
@@ -194,7 +191,6 @@
                     <span>导出全部</span>
                 `;
 
-                // 添加点击事件
                 checkButton.onclick = function() {
                     const selected = getSelectedDirectory();
                     if (!selected) {
@@ -206,55 +202,61 @@
                 };
 
                 fetchButton.onclick = async function() {
-                    const selected = getSelectedDirectory();
-                    if (!selected) {
-                        alert('请选中一个目录!');
-                        return;
+                    try {
+                        const selected = getSelectedDirectory();
+                        if (!selected) {
+                            alert('请选中一个目录!');
+                            return;
+                        }
+
+                        const { dirInfo, title } = selected;
+                        console.log("选中的目录信息:", dirInfo);
+
+                        const uk = dirInfo.uk;
+                        const fsId = dirInfo.fs_id;
+                        const gid = dirInfo.group_id;
+                        const msgId = dirInfo.msg_id;
+
+                        depthSetting = parseInt(prompt("请输入要获取的子目录层数:", "1"), 10);
+                        if (isNaN(depthSetting) || depthSetting < 1) {
+                            alert("请输入有效的层数！");
+                            return;
+                        }
+
+                        const result = await fetchSubdirectories(uk, msgId, fsId, gid, title, depthSetting);
+                        saveAsTxt(result.tree, title);
+                    } finally {
+                        cleanup();
                     }
-
-                    const { dirInfo, title } = selected;
-                    console.log("选中的目录信息:", dirInfo);
-
-                    const uk = dirInfo.uk;
-                    const fsId = dirInfo.fs_id;
-                    const gid = dirInfo.group_id;
-                    const msgId = dirInfo.msg_id;
-
-                    depthSetting = parseInt(prompt("请输入要获取的子目录层数:", "1"), 10);
-                    if (isNaN(depthSetting) || depthSetting < 1) {
-                        alert("请输入有效的层数！");
-                        return;
-                    }
-
-                    const result = await fetchSubdirectories(uk, msgId, fsId, gid, title, depthSetting);
-                    console.log("获取的目录结构：", result);
-                    saveAsTxt(result.tree, title);
                 };
 
                 fetchAllButton.onclick = async function() {
-                    const selected = getSelectedDirectory();
-                    if (!selected) {
-                        alert('请选中一个目录!');
-                        return;
+                    try {
+                        const selected = getSelectedDirectory();
+                        if (!selected) {
+                            alert('请选中一个目录!');
+                            return;
+                        }
+
+                        const { dirInfo, title } = selected;
+                        console.log("选中的目录信息:", dirInfo);
+
+                        const uk = dirInfo.uk;
+                        const fsId = dirInfo.fs_id;
+                        const gid = dirInfo.group_id;
+                        const msgId = dirInfo.msg_id;
+
+                        depthSetting = parseInt(prompt("请输入要获取的层数:", "1"), 10);
+                        if (isNaN(depthSetting) || depthSetting < 1) {
+                            alert("请输入有效的层数！");
+                            return;
+                        }
+
+                        const result = await fetchAllContent(uk, msgId, fsId, gid, title, depthSetting);
+                        saveAsTxt(result.tree, title + "_完整");
+                    } finally {
+                        cleanup();
                     }
-
-                    const { dirInfo, title } = selected;
-                    console.log("选中的目录信息:", dirInfo);
-
-                    const uk = dirInfo.uk;
-                    const fsId = dirInfo.fs_id;
-                    const gid = dirInfo.group_id;
-                    const msgId = dirInfo.msg_id;
-
-                    depthSetting = parseInt(prompt("请输入要获取的层数:", "1"), 10);
-                    if (isNaN(depthSetting) || depthSetting < 1) {
-                        alert("请输入有效的层数！");
-                        return;
-                    }
-
-                    const result = await fetchAllContent(uk, msgId, fsId, gid, title, depthSetting);
-                    console.log("获取的完整结构：", result);
-                    saveAsTxt(result.tree, title + "_完整");
                 };
 
                 // 使用 requestAnimationFrame 来优化按钮插入时机
@@ -356,11 +358,6 @@
         }
     }
 
-    // 点击文件库按钮时触发
-    function onLibraryButtonClick() {
-        console.log("文件库按钮已点击"); // 调试输出
-    }
-
     // 拦截 XMLHttpRequest 请求
     function interceptNetworkRequests() {
         const originalOpen = XMLHttpRequest.prototype.open; // 保存原始 XMLHttpRequest.open
@@ -400,25 +397,22 @@
     // 处理文件库数据：取需要的信息并存储
     function processLibraryData(data) {
         if (!data || data.errno !== 0) {
-            console.error("获取文件库数据失败或数据为空：", data);
+            console.error("文件库数据获取失败，错误码：", data?.errno);
             return;
         }
 
-        const msgList = data.records?.msg_list || []; // 获取 msg_list
-        console.log(`发现 ${msgList.length} 条消息。`);
-
-        directories = []; // 清空旧数据
+        // 在获取新的文件库数据时才清空旧数据
+        directories = []; 
+        
+        const msgList = data.records?.msg_list || [];
 
         msgList.forEach((msg, index) => {
-            console.log(`正在处理第 ${index + 1} 条消息:`, msg); // 调试输出
             const group_id = msg.group_id; // 获取 group_id
             const uk = msg.uk; // 获取 uk，假设在 msg 中存在
 
             msg.file_list.forEach(file => {
-                console.log(`检查文件: ${file.server_filename}, isdir=${file.isdir}`); // 调试输出
                 // 确保 isdir 为数字 1
                 if (parseInt(file.isdir) === 1) { // 只处理目录
-                    console.log(`添加目录: ${file.server_filename}`); // 打印添加的目录
                     directories.push({
                         fs_id: file.fs_id,
                         server_filename: file.server_filename,
@@ -429,37 +423,29 @@
                 }
             });
         });
-
-        console.log("解析后的目录数据：", directories); // 打印目录数据
     }
 
     // 处理目录数据：提取需要的信息并存储
     function processDirectoryData(data) {
         if (!data || data.errno !== 0) {
-            console.error("获取目录数据失败或数据为空：", data);
+            console.error("目录数据获取失败，错误码：", data?.errno);
             return;
         }
 
         const records = data.records || [];
-        console.log(`发现 ${records.length} 条记录。`);
 
         records.forEach(record => {
             // 保存所有目录信息，包括子目录
             if (parseInt(record.isdir) === 1) {
-                console.log(`处理目录: ${record.server_filename}, 原始路径: ${record.path}`);
-                
                 // 处理路径，移除"我的资源"前缀
                 let processedPath = record.path;
                 if (processedPath.startsWith('/我的资源/')) {
                     processedPath = processedPath.substring('/我的资源'.length);
                 }
-                console.log(`处理后的路径: ${processedPath}`);
                 
                 // 从处理后的路径中提取各级目录
                 const pathParts = processedPath.split('/').filter(p => p);
                 const rootName = pathParts[0];
-                
-                console.log(`提取的根目录名: ${rootName}`);
                 
                 // 查找根目录信息
                 const rootDir = directories.find(d => d.server_filename === rootName);
@@ -482,10 +468,8 @@
 
                         // 添加到目录列表
                         directories.push(dirInfo);
-                        console.log(`添加目录: ${dirInfo.server_filename}, 层级: ${dirInfo.level}, 父路径: ${dirInfo.parent_path}`);
                     }
                 } else {
-                    console.log(`未找到根目录 "${rootName}" 的信息，可能是新的根目录`);
                     // 如果是根目录级别的分享，直接添加
                     if (pathParts.length === 1) {
                         const dirInfo = {
@@ -498,7 +482,6 @@
                             level: 0
                         };
                         directories.push(dirInfo);
-                        console.log(`添加根目录: ${dirInfo.server_filename}`);
                     }
                 }
             }
@@ -506,23 +489,22 @@
 
         // 按层级排序，方便调试查看
         directories.sort((a, b) => (a.level || 0) - (b.level || 0));
-        console.log("更新后的目录数据：", directories);
     }
 
-    // 修改获取子目录信息的函数
+    // 获取子目录信息
     async function fetchSubdirectories(uk, msgId, fsId, gid, title, depth) {
         console.log(`开始获取子目录信息: ${title}, 深度: ${depth}`);
         
-        const startTime = performance.now(); // 添加开始时间记录
+        const startTime = performance.now();
         const progressBar = createProgressBar();
         progressBar.show();
 
-        const result = {
+        let result = {
             name: title,
             children: [],
             level: 0,
             isRoot: true,
-            startTime: startTime // 保存开始时间到结果对象
+            startTime: startTime
         };
 
         let totalDirectories = 0;
@@ -593,14 +575,16 @@
             await fetchDirContent(result, 0);
             progressBar.updateText('目录获取完成！');
             setTimeout(() => progressBar.hide(), 2000);
+            const treeResult = formatDirectoryTree(result);
             return {
-                tree: formatDirectoryTree(result), // result 对象中包含了 startTime
+                tree: treeResult,
                 startTime: startTime
             };
-        } catch (error) {
-            progressBar.updateText('获取目录时发生错误！');
-            setTimeout(() => progressBar.hide(), 2000);
-            throw error;
+        } finally {
+            // 清理资源
+            progressBar.remove();
+            result = null;
+            cleanup();
         }
     }
 
@@ -610,29 +594,26 @@
         return name.replace(/[\u200b\u200c\u200d\u200e\u200f\ufeff]/g, '');
     }
 
-    // 修改 formatAllContent 函数中的 formatItem 函数
-    function formatItem(node, prefix = '', isLastArray = []) {
+    // 格式化目录树
+    function formatDirItem(node, prefix = '', isLastArray = []) {
         if (node.isRoot) {
             result += `${cleanFileName(node.name)}/\n`;
             if (node.children && node.children.length > 0) {
                 node.children.forEach((child, index) => {
                     const isLast = index === node.children.length - 1;
-                    formatItem(child, '', [isLast]);
+                    formatDirItem(child, '', [isLast]);
                 });
             }
         } else {
             const connector = isLastArray[isLastArray.length - 1] ? SYMBOLS.last : SYMBOLS.tee;
             const cleanName = cleanFileName(node.name);
-            const itemName = node.isDir ? `${cleanName}/` : cleanName;
-            const size = !node.isDir ? ` (${formatSize(node.size)})` : '';
-            
-            result += `${prefix}${connector}${itemName}${size}\n`;
+            result += `${prefix}${connector}${cleanName}\n`;
 
             if (node.children && node.children.length > 0) {
                 node.children.forEach((child, index) => {
                     const isLast = index === node.children.length - 1;
                     const newPrefix = prefix + (isLastArray[isLastArray.length - 1] ? SYMBOLS.space : SYMBOLS.branch);
-                    formatItem(child, newPrefix, [...isLastArray, isLast]);
+                    formatDirItem(child, newPrefix, [...isLastArray, isLast]);
                 });
             }
         }
@@ -724,23 +705,21 @@
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        console.log(`已保存文件: ${title}.txt`); // 调试输出
+        console.log(`已保存文件: ${title}.txt`);
     }
 
     // 添加获取全部内容的函数
     async function fetchAllContent(uk, msgId, fsId, gid, title, depth) {
-        const startTime = performance.now(); // 记录总处理开始时间
-        console.log(`开始获取所有内容: ${title}, 深度: ${depth}`);
-        
+        const startTime = performance.now();
         const progressBar = createProgressBar();
         progressBar.show();
 
-        const result = {
+        let result = {
             name: title,
             children: [],
             level: 0,
             isRoot: true,
-            startTime: startTime // 保存开始时间
+            startTime: startTime
         };
 
         let totalItems = 0;
@@ -791,7 +770,7 @@
                         console.log(`[${parentDir.name}] 第 ${page} 页获取成功，本页记录数: ${data.records.length}，hasMore: ${hasMore}`);
                     } catch (error) {
                         retryCount++;
-                        console.error(`[${parentDir.name}] 获取第 ${page} 页失败 (尝试 ${retryCount}/${maxRetries}):`, error);
+                        console.error(`[${parentDir.name}] 页面 ${page} 获取失败 (${retryCount}/${maxRetries})`);
                         
                         if (retryCount < maxRetries) {
                             const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // 指数退避策略
@@ -799,7 +778,7 @@
                             await new Promise(resolve => setTimeout(resolve, delay));
                         } else {
                             progressBar.updateText(`获取 "${parentDir.name}" 第 ${page} 页失败，跳过...`);
-                            console.error(`[${parentDir.name}] 达到最大重试次数，跳过此页`);
+                            console.error(`[${parentDir.name}] 达到重试上限，跳过`);
                             hasMore = false; // 停止获取更多页面
                         }
                     }
@@ -842,14 +821,16 @@
             await fetchContent(result, 0);
             progressBar.updateText('内容获取完成！');
             setTimeout(() => progressBar.hide(), 2000);
+            const treeResult = formatAllContent(result);
             return {
-                tree: formatAllContent(result),
-                startTime: startTime // 传递开始时间
+                tree: treeResult,
+                startTime: startTime
             };
-        } catch (error) {
-            progressBar.updateText('获取内容时发生错误！');
-            setTimeout(() => progressBar.hide(), 2000);
-            throw error;
+        } finally {
+            // 清理资源
+            progressBar.remove();
+            result = null;
+            cleanup();
         }
     }
 
@@ -936,7 +917,15 @@
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    // 启动 MutationObserver，等待文件库按钮和标题加载
+    // 清理资源
+    function cleanup() {
+        const progressBar = document.getElementById('directory-progress');
+        if (progressBar && progressBar.parentNode) {
+            progressBar.parentNode.removeChild(progressBar);
+        }
+    }
+
+    // 启动观察器
     waitForLibraryElements();
 })();
 
