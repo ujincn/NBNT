@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         NBNT: 新版百度网盘共享文件库目录导出工具
 // @namespace    http://tampermonkey.net/
-// @version      0.264
+// @version      0.268
 // @description  用于导出百度网盘共享文件库目录和文件列表
 // @author       UJiN
 // @license      MIT
 // @match        https://pan.baidu.com/disk*
 // @icon         https://nd-static.bdstatic.com/m-static/v20-main/favicon-main.ico
 // @grant        GM_xmlhttpRequest
+// @require      https://unpkg.com/xlsx/dist/xlsx.full.min.js
 // ==/UserScript==
 
 (function () {
@@ -68,7 +69,7 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             z-index: 9999;
             display: none;
-            min-width: 300px;
+            width: 350px;
             font-family: "Microsoft YaHei", sans-serif;
         `;
 
@@ -164,6 +165,61 @@
                     return;
                 }
 
+                // 添加样式
+                const style = document.createElement('style');
+                style.textContent = `
+                    .export-dropdown {
+                        position: relative;
+                        display: inline-flex;
+                        align-items: center;
+                        cursor: pointer;
+                        height: 24px;
+                        line-height: 24px;
+                    }
+                    .export-dropdown::after {
+                        content: '';
+                        position: absolute;
+                        right: -12px;
+                        top: 6px;
+                        width: 1px;
+                        height: 12px;
+                        background-color: rgb(217, 217, 217);
+                    }
+                    .export-dropdown-menu {
+                        display: none;
+                        position: absolute;
+                        top: 100%;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        background: white;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                        padding: 4px;
+                        z-index: 99999;
+                        margin-top: 2px;
+                        border: 1px solid #e8e8e8;
+                        white-space: nowrap;
+                        flex-direction: row;
+                    }
+                    .export-dropdown-menu.show {
+                        display: flex;
+                    }
+                    .export-item {
+                        padding: 4px 12px;
+                        cursor: pointer;
+                        color: #333;
+                        font-size: 12px;
+                        line-height: 1.5;
+                        border-right: 1px solid #e8e8e8;
+                    }
+                    .export-item:last-child {
+                        border-right: none;
+                    }
+                    .export-item:hover {
+                        background: #f5f5f5;
+                    }
+                `;
+                document.head.appendChild(style);
+
                 const checkButton = document.createElement('button');
                 checkButton.id = 'check-dir-button';
                 checkButton.type = 'button';
@@ -173,22 +229,28 @@
                     <span>检查目录</span>
                 `;
                 
-                const fetchButton = document.createElement('button');
-                fetchButton.id = 'fetch-dir-button';
-                fetchButton.type = 'button';
-                fetchButton.className = 'u-button u-button--default u-button--mini';
-                fetchButton.innerHTML = `
+                const exportDropdown = document.createElement('div');
+                exportDropdown.className = 'export-dropdown u-button u-button--default u-button--mini';
+                exportDropdown.innerHTML = `
                     <i class="u-icon-folder"></i>
                     <span>导出目录</span>
+                    <i class="u-icon-arrow-down" style="margin-left: 4px;"></i>
+                    <div class="export-dropdown-menu">
+                        <div class="export-item" data-type="txt">导出为TXT</div>
+                        <div class="export-item" data-type="xlsx">导出为Excel</div>
+                    </div>
                 `;
 
-                const fetchAllButton = document.createElement('button');
-                fetchAllButton.id = 'fetch-all-button';
-                fetchAllButton.type = 'button';
-                fetchAllButton.className = 'u-button u-button--default u-button--mini';
-                fetchAllButton.innerHTML = `
+                const fetchAllDropdown = document.createElement('div');
+                fetchAllDropdown.className = 'export-dropdown u-button u-button--default u-button--mini';
+                fetchAllDropdown.innerHTML = `
                     <i class="u-icon-download-bold"></i>
                     <span>导出全部</span>
+                    <i class="u-icon-arrow-down" style="margin-left: 4px;"></i>
+                    <div class="export-dropdown-menu">
+                        <div class="export-item" data-type="txt">导出为TXT</div>
+                        <div class="export-item" data-type="xlsx">导出为Excel</div>
+                    </div>
                 `;
 
                 checkButton.onclick = function() {
@@ -201,7 +263,28 @@
                     checkDirectoryInfo(dirInfo.msg_id, title);
                 };
 
-                fetchButton.onclick = async function() {
+                // 处理导出选项点击
+                exportDropdown.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const menu = this.querySelector('.export-dropdown-menu');
+                    menu.classList.toggle('show');
+                });
+
+                // 点击其他地方关闭菜单
+                document.addEventListener('click', function() {
+                    const menus = document.querySelectorAll('.export-dropdown-menu');
+                    menus.forEach(menu => menu.classList.remove('show'));
+                });
+
+                // 防止菜单项点击事件冒泡
+                exportDropdown.querySelector('.export-dropdown-menu').addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+
+                exportDropdown.querySelector('.export-dropdown-menu').addEventListener('click', async function(e) {
+                    const exportType = e.target.dataset.type;
+                    if (!exportType) return;
+
                     try {
                         const selected = getSelectedDirectory();
                         if (!selected) {
@@ -224,13 +307,36 @@
                         }
 
                         const result = await fetchSubdirectories(uk, msgId, fsId, gid, title, depthSetting);
-                        saveAsTxt(result.tree, title);
+                        if (!window.cancelOperation && result) {
+                            if (exportType === 'txt') {
+                                const formattedContent = formatDirectoryTree(result.tree);
+                                saveAsTxt(formattedContent, title);
+                            } else if (exportType === 'xlsx') {
+                                saveAsExcel(result, title);
+                            }
+                        }
                     } finally {
                         cleanup();
                     }
-                };
+                });
 
-                fetchAllButton.onclick = async function() {
+                // 处理导出全部按钮的点击事件
+                fetchAllDropdown.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const menu = this.querySelector('.export-dropdown-menu');
+                    menu.classList.toggle('show');
+                });
+
+                // 防止菜单项点击事件冒泡
+                fetchAllDropdown.querySelector('.export-dropdown-menu').addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+
+                // 修改导出全部选项的点击处理
+                fetchAllDropdown.querySelector('.export-dropdown-menu').addEventListener('click', async function(e) {
+                    const exportType = e.target.dataset.type;
+                    if (!exportType) return;
+
                     try {
                         const selected = getSelectedDirectory();
                         if (!selected) {
@@ -253,16 +359,27 @@
                         }
 
                         const result = await fetchAllContent(uk, msgId, fsId, gid, title, depthSetting);
-                        saveAsTxt(result.tree, title + "_完整");
+                        if (!window.cancelOperation && result) {
+                            if (exportType === 'txt') {
+                                // TXT 导出时进行格式化
+                                const formattedContent = formatAllContent(result.tree);
+                                saveAsTxt(formattedContent, title + "_完整");
+                            } else if (exportType === 'xlsx') {
+                                // Excel 导出使用原始数据结构
+                                saveAsExcel(result, title + "_完整");
+                            }
+                        }
                     } finally {
                         cleanup();
                     }
-                };
+                });
 
-                // 使用 requestAnimationFrame 来优化按钮插入时机
+                // 修改按钮插入顺序
                 requestAnimationFrame(() => {
-                    downloadButton.after(fetchAllButton);
-                    downloadButton.after(fetchButton);
+                    downloadButton.after(fetchAllDropdown);
+                    downloadButton.after(document.createTextNode(' ')); // 添加空格
+                    downloadButton.after(exportDropdown);
+                    downloadButton.after(document.createTextNode(' ')); // 添加空格
                     downloadButton.after(checkButton);
                 });
 
@@ -368,8 +485,8 @@
                 this.addEventListener('load', function () {
                     try {
                         const data = this.responseType === 'json' ? this.response : JSON.parse(this.responseText);
-                        console.log("完整的响应数据：", data); // 调试输出完整数据
-                        processLibraryData(data); // 处理文件库数据
+                        console.debug("完整的响应数据：", data); // 调试输出完整数据
+                        processLibraryData(data);
                     } catch (e) {
                         console.error("解析响应失败：", e);
                     }
@@ -382,8 +499,8 @@
                 this.addEventListener('load', function () {
                     try {
                         const data = this.responseType === 'json' ? this.response : JSON.parse(this.responseText);
-                        console.log("完整的响应数据：", data); // 调试输出完整数据
-                        processDirectoryData(data); // 处理目录数据
+                        console.debug("完整的响应数据：", data); // 调试输出完整数据
+                        processDirectoryData(data); 
                     } catch (e) {
                         console.error("解析响应失败：", e);
                     }
@@ -407,18 +524,17 @@
         const msgList = data.records?.msg_list || [];
 
         msgList.forEach((msg, index) => {
-            const group_id = msg.group_id; // 获取 group_id
-            const uk = msg.uk; // 获取 uk，假设在 msg 中存在
+            const group_id = msg.group_id;
+            const uk = msg.uk;
 
             msg.file_list.forEach(file => {
-                // 确保 isdir 为数字 1
-                if (parseInt(file.isdir) === 1) { // 只处理目录
+                if (parseInt(file.isdir) === 1) {
                     directories.push({
                         fs_id: file.fs_id,
                         server_filename: file.server_filename,
                         group_id: group_id,
                         msg_id: msg.msg_id,
-                        uk: uk // 保存 uk
+                        uk: uk
                     });
                 }
             });
@@ -556,7 +672,8 @@
                     fs_id: record.fs_id,
                     children: [],
                     level: currentDepth + 1,
-                    parentLevel: currentDepth
+                    parentLevel: currentDepth,
+                    isDir: true
                 };
                 parentDir.children.push(childDir);
 
@@ -575,13 +692,12 @@
             await fetchDirContent(result, 0);
             progressBar.updateText('目录获取完成！');
             setTimeout(() => progressBar.hide(), 2000);
-            const treeResult = formatDirectoryTree(result);
+            
             return {
-                tree: treeResult,
+                tree: result,
                 startTime: startTime
             };
         } finally {
-            // 清理资源
             progressBar.remove();
             result = null;
             cleanup();
@@ -619,9 +735,8 @@
         }
     }
 
-    // 修改格式化函数
     function formatDirectoryTree(dir) {
-        const formatStartTime = performance.now(); // 添加格式化开始时间
+        const formatStartTime = performance.now();
         const SYMBOLS = {
             space:  '    ',
             branch: '│   ',
@@ -662,10 +777,9 @@
             }
         }
 
-        // 调用格式化函数
         formatDir(dir, '', []);
         
-        const endTime = performance.now(); // 记录结束时间
+        const endTime = performance.now();
         const formatTime = ((endTime - formatStartTime) / 1000).toFixed(2); // 格式化耗时
         const totalTime = ((endTime - (dir.startTime || formatStartTime)) / 1000).toFixed(2); // 总耗时
         
@@ -674,7 +788,7 @@
         result += `统计信息：\n`;
         result += `目录数量：${countDirectories(dir)} 个\n`;
         result += `格式化耗时：${formatTime} 秒\n`;
-        if (dir.startTime) { // 如果有开始时间才显示总耗时
+        if (dir.startTime) {
             result += `总处理耗时：${totalTime} 秒\n`;
         }
         
@@ -731,8 +845,8 @@
             let page = 1;
             let hasMore = true;
             const allRecords = [];
-            const maxRetries = 3; // 最大重试次数
-            const requestPool = new RequestPool(2, 3000); // 降低并发数，增加间隔
+            const maxRetries = 3;
+            const requestPool = new RequestPool(2, 3000);
 
             while (hasMore) {
                 progressBar.updateText(`正在获取 "${parentDir.name}" 的第 ${page} 页数据...`);
@@ -747,7 +861,7 @@
                     try {
                         const data = await requestPool.add(async () => {
                             const response = await fetch(url, { 
-                                timeout: 30000,  // 增加超时时间到30秒
+                                timeout: 30000,
                                 headers: {
                                     'Cache-Control': 'no-cache',
                                     'Pragma': 'no-cache'
@@ -779,7 +893,7 @@
                         } else {
                             progressBar.updateText(`获取 "${parentDir.name}" 第 ${page} 页失败，跳过...`);
                             console.error(`[${parentDir.name}] 达到重试上限，跳过`);
-                            hasMore = false; // 停止获取更多页面
+                            hasMore = false; 
                         }
                     }
                 }
@@ -821,22 +935,20 @@
             await fetchContent(result, 0);
             progressBar.updateText('内容获取完成！');
             setTimeout(() => progressBar.hide(), 2000);
-            const treeResult = formatAllContent(result);
+            
             return {
-                tree: treeResult,
+                tree: result,
                 startTime: startTime
             };
         } finally {
-            // 清理资源
             progressBar.remove();
             result = null;
             cleanup();
         }
     }
 
-    // 添加格式化全部内容的函数
     function formatAllContent(dir) {
-        const formatStartTime = performance.now(); // 格式化开始时间
+        const formatStartTime = performance.now();
         let result = '';
         const currentTime = new Date().toLocaleString();
         
@@ -892,9 +1004,9 @@
 
         formatItem(dir, '', []);
         
-        const endTime = performance.now(); // 记录结束时间
-        const formatTime = ((endTime - formatStartTime) / 1000).toFixed(2); // 格式化耗时
-        const totalTime = ((endTime - dir.startTime) / 1000).toFixed(2); // 总耗时
+        const endTime = performance.now();
+        const formatTime = ((endTime - formatStartTime) / 1000).toFixed(2);
+        const totalTime = ((endTime - dir.startTime) / 1000).toFixed(2);
         
         result += `\n${'='.repeat(50)}\n`;
         result += `统计信息：\n`;
@@ -908,7 +1020,6 @@
         return result;
     }
 
-    // 添加文件大小格式化函数
     function formatSize(bytes) {
         if (bytes === 0) return '0 B';
         const k = 1024;
@@ -917,7 +1028,6 @@
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    // 清理资源
     function cleanup() {
         const progressBar = document.getElementById('directory-progress');
         if (progressBar && progressBar.parentNode) {
@@ -925,7 +1035,152 @@
         }
     }
 
-    // 启动观察器
+    function saveAsExcel(data, title) {
+        const wb = XLSX.utils.book_new();
+        
+        const excelData = [];
+        
+        excelData.push(['目录结构导出清单']);
+        excelData.push([`导出时间: ${new Date().toLocaleString()}`]);
+        
+        let fileCount = 0;
+        let dirCount = 0;
+        let totalSize = 0;
+        
+        function countItems(node) {
+            if (!node.isRoot) {
+                if (node.isDir) {
+                    dirCount++;
+                } else {
+                    fileCount++;
+                    totalSize += node.size || 0;
+                }
+            }
+            if (node.children && node.children.length > 0) {
+                node.children.forEach(countItems);
+            }
+        }
+        
+        countItems(data.tree);
+        
+        excelData.push(['统计信息']);
+        excelData.push([`目录数量: ${dirCount}`]);
+        if (fileCount > 0) {
+            excelData.push([`文件数量: ${fileCount}`]);
+            excelData.push([`文件大小: ${formatSize(totalSize)}`]);
+            excelData.push([`处理总计: ${dirCount + fileCount} 个项目`]);
+        }
+        excelData.push([`格式化耗时: ${((performance.now() - data.startTime) / 1000).toFixed(2)} 秒`]);
+        excelData.push(['']);
+        
+        function getMaxDepth(node, currentDepth = 0) {
+            if (!node.children || node.children.length === 0) {
+                return currentDepth;
+            }
+            return Math.max(...node.children.map(child => 
+                getMaxDepth(child, currentDepth + 1)
+            ));
+        }
+        
+        const actualDepth = Math.min(depthSetting, getMaxDepth(data.tree) + 1);
+        
+        const headers = [];
+        for (let i = 1; i <= actualDepth; i++) {
+            headers.push(`${i}级目录`);
+        }
+        excelData.push(headers);
+        
+        const allRows = [];
+        
+        function extractNumber(str) {
+            const match = str.match(/^(\d+)\./);
+            return match ? parseInt(match[1]) : Infinity;
+        }
+
+        function compareItems(a, b) {
+            const numA = extractNumber(a.name);
+            const numB = extractNumber(b.name);
+            
+            if (numA !== numB) {
+                return numA - numB;
+            }
+            
+            return a.name.localeCompare(b.name, 'zh-CN');
+        }
+
+        function processNode(node, level = 0, parentRow = []) {
+            if (level >= actualDepth) return;
+            
+            const currentRow = [...parentRow];
+            
+            if (!node.isRoot) {
+                currentRow[level] = node.name;
+                allRows.push([...currentRow]);
+            }
+            
+            if (node.children && node.children.length > 0) {
+                if (node.isRoot) {
+                    node.children.sort(compareItems);
+                    node.children.forEach(child => {
+                        const newRow = new Array(actualDepth).fill('');
+                        newRow[0] = child.name;
+                        allRows.push([...newRow]);
+                        
+                        if (child.children && child.children.length > 0) {
+                            child.children.sort(compareItems);
+                            child.children.forEach(grandChild => {
+                                processNode(grandChild, 1, newRow);
+                            });
+                        }
+                    });
+                } else {
+                    node.children.sort(compareItems);
+                    node.children.forEach(child => {
+                        processNode(child, level + 1, currentRow);
+                    });
+                }
+            }
+        }
+        
+        processNode(data.tree, 0, new Array(actualDepth).fill(''));
+        
+        excelData.push(...allRows);
+        
+        const ws = XLSX.utils.aoa_to_sheet(excelData);
+        
+        const colWidths = [];
+        for (let i = 0; i < actualDepth; i++) {
+            colWidths.push({ wch: 45 });
+        }
+        ws['!cols'] = colWidths;
+        
+        ws['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: actualDepth - 1 } },  // 标题行
+            { s: { r: 1, c: 0 }, e: { r: 1, c: actualDepth - 1 } },  // 时间行
+            { s: { r: 2, c: 0 }, e: { r: 2, c: actualDepth - 1 } },  // 统计信息标题
+            { s: { r: 3, c: 0 }, e: { r: 3, c: actualDepth - 1 } },  // 目录数量
+        ];
+        
+        if (fileCount > 0) {
+            ws['!merges'].push(
+                { s: { r: 4, c: 0 }, e: { r: 4, c: actualDepth - 1 } },  // 文件数量
+                { s: { r: 5, c: 0 }, e: { r: 5, c: actualDepth - 1 } },  // 文件大小
+                { s: { r: 6, c: 0 }, e: { r: 6, c: actualDepth - 1 } },  // 处理总计
+                { s: { r: 7, c: 0 }, e: { r: 7, c: actualDepth - 1 } },  // 格式化耗时
+                { s: { r: 8, c: 0 }, e: { r: 8, c: actualDepth - 1 } }   // 空行
+            );
+        } else {
+            ws['!merges'].push(
+                { s: { r: 4, c: 0 }, e: { r: 4, c: actualDepth - 1 } },  // 格式化耗时
+                { s: { r: 5, c: 0 }, e: { r: 5, c: actualDepth - 1 } }   // 空行
+            );
+        }
+        
+        XLSX.utils.book_append_sheet(wb, ws, '目录结构');
+        
+        XLSX.writeFile(wb, `${title}.xlsx`);
+    }
+
     waitForLibraryElements();
 })();
 
