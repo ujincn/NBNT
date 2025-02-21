@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         NBNT: 新版百度网盘共享文件库目录导出工具
 // @namespace    http://tampermonkey.net/
-// @version      0.268
+// @version      0.269
 // @description  用于导出百度网盘共享文件库目录和文件列表
 // @author       UJiN
 // @license      MIT
 // @match        https://pan.baidu.com/disk*
 // @icon         https://nd-static.bdstatic.com/m-static/v20-main/favicon-main.ico
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @require      https://unpkg.com/xlsx/dist/xlsx.full.min.js
 // ==/UserScript==
 
@@ -19,11 +21,11 @@
 
     // 添加并发控制池
     class RequestPool {
-        constructor(maxConcurrent = 2, requestInterval = 3000) {
-            this.maxConcurrent = maxConcurrent;
+        constructor() {
+            this.maxConcurrent = config.maxConcurrent;
             this.currentRequests = 0;
             this.queue = [];
-            this.requestInterval = requestInterval;
+            this.requestInterval = config.requestInterval;
             this.lastRequestTime = 0;
         }
 
@@ -53,6 +55,124 @@
                 }
             }
         }
+    }
+
+    // 添加默认配置
+    const defaultConfig = {
+        maxConcurrent: 2,           // 最大并发请求数
+        requestInterval: 3000,      // 请求间隔(毫秒)
+        maxRetries: 3,             // 最大重试次数
+        defaultDepth: 1           // 默认获取层数
+    };
+
+    // 获取配置（如果没有则使用默认值）
+    let config = {
+        ...defaultConfig,
+        ...GM_getValue('nbntConfig', {})
+    };
+
+    // 保存配置
+    function saveConfig() {
+        GM_setValue('nbntConfig', config);
+    }
+
+    // 创建配置面板
+    function createConfigPanel() {
+        const panel = document.createElement('div');
+        panel.style.cssText = `
+            position: fixed;
+            top: 60px;
+            right: 60px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            width: 380px;
+            display: none;
+            font-family: "Microsoft YaHei", sans-serif;
+        `;
+        panel.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0; font-size: 16px; color: #333;">NBNT 配置</h3>
+                <button id="closeConfig" style="border: none; background: none; cursor: pointer; padding: 4px;">
+                    <i class="u-icon-close" style="font-size: 16px; color: #666;"></i>
+                </button>
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 8px; color: #666;">最大并发请求数</label>
+                <input type="number" id="maxConcurrent" value="${config.maxConcurrent}" min="1" max="5" 
+                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 8px; color: #666;">请求间隔(毫秒)</label>
+                <input type="number" id="requestInterval" value="${config.requestInterval}" min="1000" step="500" 
+                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 8px; color: #666;">最大重试次数</label>
+                <input type="number" id="maxRetries" value="${config.maxRetries}" min="1" max="5" 
+                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 8px; color: #666;">默认获取层数</label>
+                <input type="number" id="defaultDepth" value="${config.defaultDepth}" min="1" 
+                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+            </div>
+            <div style="text-align: right; border-top: 1px solid #eee; padding-top: 16px;">
+                <button id="saveConfig" 
+                    style="padding: 8px 24px; background: #06a7ff; color: white; border: none; border-radius: 4px; cursor: pointer; transition: all 0.3s;">
+                    保存
+                </button>
+            </div>
+        `;
+        document.body.appendChild(panel);
+
+        // 添加输入框焦点样式
+        const inputs = panel.querySelectorAll('input[type="number"]');
+        inputs.forEach(input => {
+            input.addEventListener('focus', () => {
+                input.style.borderColor = '#06a7ff';
+                input.style.boxShadow = '0 0 0 2px rgba(6,167,255,0.2)';
+            });
+            input.addEventListener('blur', () => {
+                input.style.borderColor = '#ddd';
+                input.style.boxShadow = 'none';
+            });
+        });
+
+        // 绑定事件
+        document.getElementById('saveConfig').onclick = function() {
+            config.maxConcurrent = parseInt(document.getElementById('maxConcurrent').value);
+            config.requestInterval = parseInt(document.getElementById('requestInterval').value);
+            config.maxRetries = parseInt(document.getElementById('maxRetries').value);
+            config.defaultDepth = parseInt(document.getElementById('defaultDepth').value);
+            saveConfig();
+            panel.style.display = 'none';
+            document.querySelector('#nbnt-config-button').classList.remove('is-select');
+        };
+
+        document.getElementById('closeConfig').onclick = function() {
+            panel.style.display = 'none';
+            document.querySelector('#nbnt-config-button').classList.remove('is-select'); 
+        };
+
+        // 添加点击外部关闭面板
+        document.addEventListener('click', function(e) {
+            if (!panel.contains(e.target) && 
+                !e.target.closest('#nbnt-config-button')) {
+                panel.style.display = 'none';
+                document.querySelector('#nbnt-config-button').classList.remove('is-select');  // 移除高亮状态
+            }
+        });
+
+        return {
+            show: () => panel.style.display = 'block',
+            hide: () => {
+                panel.style.display = 'none';
+                document.querySelector('#nbnt-config-button').classList.remove('is-select');  // 移除高亮状态
+            }
+        };
     }
 
     // 添加进度条组件
@@ -149,6 +269,13 @@
             isProcessing = true;
 
             try {
+    
+                const actionContainer = document.querySelector('.im-r-contain__actions');
+                if (!actionContainer) {
+                    isProcessing = false;
+                    return;
+                }
+
                 const operateDiv = document.querySelector('.im-file-nav__operate');
                 const downloadButton = operateDiv?.querySelector('.u-icon-download')?.closest('button');
                 
@@ -159,10 +286,17 @@
 
                 const existingCheckButton = document.querySelector('#check-dir-button');
                 const existingFetchButton = document.querySelector('#fetch-dir-button');
+                const existingConfigButton = document.querySelector('#nbnt-config-button');
                 
+                // 如果操作按钮已存在则返回
                 if (existingCheckButton || existingFetchButton) {
                     isProcessing = false;
                     return;
+                }
+
+                // 如果配置按钮已存在则移除
+                if (existingConfigButton) {
+                    existingConfigButton.remove();
                 }
 
                 // 添加样式
@@ -253,6 +387,76 @@
                     </div>
                 `;
 
+                // 创建配置按钮
+                const configButton = document.createElement('div');
+                configButton.id = 'nbnt-config-button';
+                configButton.innerHTML = `
+                    <span class="u-tooltip u-uicon is-hover" tabindex="0" aria-describedby="nbnt-config-tooltip">
+                        <i class="u-uicon__font u-icon-setting" style="color: #666;"></i>
+                    </span>
+                    <div class="u-tooltip__popper" id="nbnt-config-tooltip">NBNT 配置</div>
+                `;
+                configButton.style.cssText = `
+                    display: inline-flex;
+                    margin: 40px 8px;
+                    cursor: pointer;
+                    position: relative;
+                `;
+                
+                // 添加悬停提示样式
+                const tooltipStyle = document.createElement('style');
+                tooltipStyle.textContent = `
+                    .u-tooltip__popper {
+                        display: none;
+                        position: absolute;
+                        background: rgba(51, 51, 51, 0.9);
+                        color: #fff;
+                        padding: 5px 12px;
+                        border-radius: 4px;
+                        font-size: 12px;
+                        line-height: 1.6;
+                        white-space: nowrap;
+                        top: 50%;
+                        right: 100%;
+                        transform: translateY(-50%);
+                        margin-right: 8px;
+                        z-index: 10001;
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+                    }
+                    .u-tooltip__popper::after {
+                        content: '';
+                        position: absolute;
+                        right: -4px;
+                        top: 50%;
+                        transform: translateY(-50%);
+                        border-width: 4px;
+                        border-style: solid;
+                        border-color: transparent transparent transparent rgba(51, 51, 51, 0.9);
+                    }
+                    #nbnt-config-button:hover .u-tooltip__popper {
+                        display: block;
+                    }
+                    #nbnt-config-button.is-select i {
+                        color: #06a7ff !important;
+                    }
+                `;
+                document.head.appendChild(tooltipStyle);
+
+                const configPanel = createConfigPanel();
+                configButton.onclick = () => {
+                    const isActive = configButton.classList.contains('is-select');
+                    if (isActive) {
+                        configButton.classList.remove('is-select');
+                        configPanel.hide();
+                    } else {
+                        configButton.classList.add('is-select');
+                        configPanel.show();
+                    }
+                };
+    
+                // 将配置按钮添加到操作区域
+                actionContainer.appendChild(configButton);                
+
                 checkButton.onclick = function() {
                     const selected = getSelectedDirectory();
                     if (!selected) {
@@ -274,7 +478,7 @@
                 document.addEventListener('click', function() {
                     const menus = document.querySelectorAll('.export-dropdown-menu');
                     menus.forEach(menu => menu.classList.remove('show'));
-                });
+                });            
 
                 // 防止菜单项点击事件冒泡
                 exportDropdown.querySelector('.export-dropdown-menu').addEventListener('click', function(e) {
@@ -300,7 +504,7 @@
                         const gid = dirInfo.group_id;
                         const msgId = dirInfo.msg_id;
 
-                        depthSetting = parseInt(prompt("请输入要获取的子目录层数:", "1"), 10);
+                        depthSetting = parseInt(prompt("请输入要获取的子目录层数:", config.defaultDepth), 10);
                         if (isNaN(depthSetting) || depthSetting < 1) {
                             alert("请输入有效的层数！");
                             return;
@@ -352,7 +556,7 @@
                         const gid = dirInfo.group_id;
                         const msgId = dirInfo.msg_id;
 
-                        depthSetting = parseInt(prompt("请输入要获取的层数:", "1"), 10);
+                        depthSetting = parseInt(prompt("请输入要获取的层数:", config.defaultDepth), 10);
                         if (isNaN(depthSetting) || depthSetting < 1) {
                             alert("请输入有效的层数！");
                             return;
@@ -845,8 +1049,8 @@
             let page = 1;
             let hasMore = true;
             const allRecords = [];
-            const maxRetries = 3;
-            const requestPool = new RequestPool(2, 3000);
+            const maxRetries = config.maxRetries;
+            const requestPool = new RequestPool();
 
             while (hasMore) {
                 progressBar.updateText(`正在获取 "${parentDir.name}" 的第 ${page} 页数据...`);
