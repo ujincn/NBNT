@@ -840,10 +840,9 @@
         directories.sort((a, b) => (a.level || 0) - (b.level || 0));
     }
 
-    // 获取子目录信息
-    async function fetchSubdirectories(uk, msgId, fsId, gid, title, depth) {
-        console.log(`开始获取子目录信息: ${title}, 深度: ${depth}`);
-        
+    // 统一的获取内容函数
+    async function fetchContent(uk, msgId, fsId, gid, title, depth, fetchMode = 'directory') {
+        console.log(`开始获取内容: ${title}, 深度: ${depth}, 模式: ${fetchMode}`);
         const startTime = performance.now();
         const progressBar = createProgressBar();
         progressBar.show();
@@ -853,18 +852,21 @@
             children: [],
             level: 0,
             isRoot: true,
+            isDir: true,
             startTime: startTime
         };
 
-        let totalDirectories = 0;
-        let processedDirectories = 0;
+        let totalItems = 0;
+        let processedItems = 0;
 
-        async function fetchDirContent(parentDir, currentDepth) {
+        async function fetchItems(parentDir, currentDepth) {
             if (currentDepth >= depth) return;
 
             let page = 1;
             let hasMore = true;
             const allRecords = [];
+            const maxRetries = config.maxRetries;
+            const requestPool = new RequestPool();
 
             while (hasMore) {
                 progressBar.updateText(`正在获取 "${parentDir.name}" 的第 ${page} 页数据...`);
@@ -872,58 +874,88 @@
 
                 const url = `https://pan.baidu.com/mbox/msg/shareinfo?from_uk=${encodeURIComponent(uk)}&msg_id=${encodeURIComponent(msgId)}&type=2&num=100&page=${page}&fs_id=${encodeURIComponent(parentDir.fs_id || fsId)}&gid=${encodeURIComponent(gid)}&limit=100&desc=1&clienttype=0&app_id=250528&web=1`;
 
-                try {
-                    const response = await fetch(url, { timeout: 10000 });
-                    const data = await response.json();
+                let retryCount = 0;
+                let success = false;
 
-                    if (data.errno !== 0) {
-                        console.error(`[${parentDir.name}] 获取第 ${page} 页失败:`, data);
-                        return;
+                while (retryCount < maxRetries && !success) {
+                    try {
+                        const data = await requestPool.add(async () => {
+                            const response = await fetch(url, { 
+                                timeout: 30000,
+                                headers: {
+                                    'Cache-Control': 'no-cache',
+                                    'Pragma': 'no-cache'
+                                }
+                            });
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            return response.json();
+                        });
+
+                        if (data.errno !== 0) {
+                            throw new Error(`API error: ${data.errno}`);
+                        }
+
+                        // 根据模式过滤记录
+                        const filteredRecords = fetchMode === 'directory' 
+                            ? data.records.filter(record => parseInt(record.isdir) === 1)
+                            : data.records;
+
+                        allRecords.push(...filteredRecords);
+                        hasMore = data.has_more === 1;
+                        success = true;
+
+                        console.log(`[${parentDir.name}] 第 ${page} 页获取成功，本页记录数: ${filteredRecords.length}，hasMore: ${hasMore}`);
+                    } catch (error) {
+                        retryCount++;
+                        console.error(`[${parentDir.name}] 页面 ${page} 获取失败 (${retryCount}/${maxRetries}):`, error);
+                        
+                        if (retryCount < maxRetries) {
+                            const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
+                            progressBar.updateText(`请求失败，${delay/1000}秒后重试...`);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        } else {
+                            progressBar.updateText(`获取 "${parentDir.name}" 第 ${page} 页失败，跳过...`);
+                            hasMore = false;
+                        }
                     }
+                }
 
-                    allRecords.push(...data.records);
-                    hasMore = data.has_more === 1;
-
-                    console.log(`[${parentDir.name}] 第 ${page} 页获取成功，本页记录数: ${data.records.length}，hasMore: ${hasMore}`);
+                if (success) {
                     page++;
-
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                } catch (error) {
-                    console.error(`[${parentDir.name}] 获取第 ${page} 页时发生错误:`, error);
-                    return;
+                    await new Promise(resolve => setTimeout(resolve, 2000));
                 }
             }
 
-            const directories = allRecords.filter(record => parseInt(record.isdir) === 1);
-            totalDirectories += directories.length;
+            totalItems += allRecords.length;
             
-            console.log(`[${parentDir.name}] 目录获取完成，总页数: ${page - 1}，总记录数: ${allRecords.length}，目录数: ${directories.length}`);
-
-            const promises = directories.map(async record => {
-                const childDir = {
+            const promises = allRecords.map(async record => {
+                const childItem = {
                     name: record.server_filename,
                     fs_id: record.fs_id,
+                    isDir: parseInt(record.isdir) === 1,
+                    size: record.size,
                     children: [],
                     level: currentDepth + 1,
-                    parentLevel: currentDepth,
-                    isDir: true
+                    parentLevel: currentDepth
                 };
-                parentDir.children.push(childDir);
+                parentDir.children.push(childItem);
 
-                if (currentDepth + 1 < depth) {
-                    await fetchDirContent(childDir, currentDepth + 1);
+                if (childItem.isDir && currentDepth + 1 < depth) {
+                    await fetchItems(childItem, currentDepth + 1);
                 }
                 
-                processedDirectories++;
-                progressBar.updateProgress(processedDirectories, totalDirectories);
+                processedItems++;
+                progressBar.updateProgress(processedItems, totalItems);
             });
 
             await Promise.all(promises);
         }
 
         try {
-            await fetchDirContent(result, 0);
-            progressBar.updateText('目录获取完成！');
+            await fetchItems(result, 0);
+            progressBar.updateText('内容获取完成！');
             setTimeout(() => progressBar.hide(), 2000);
             
             return {
@@ -936,36 +968,16 @@
             cleanup();
         }
     }
+    
+    // 获取子目录信息
+    async function fetchSubdirectories(uk, msgId, fsId, gid, title, depth) {
+        return fetchContent(uk, msgId, fsId, gid, title, depth, 'directory');
+    }
 
     // 添加清理文件名的函数
     function cleanFileName(name) {
         // 移除零宽空格和其他不可见字符
         return name.replace(/[\u200b\u200c\u200d\u200e\u200f\ufeff]/g, '');
-    }
-
-    // 格式化目录树
-    function formatDirItem(node, prefix = '', isLastArray = []) {
-        if (node.isRoot) {
-            result += `${cleanFileName(node.name)}/\n`;
-            if (node.children && node.children.length > 0) {
-                node.children.forEach((child, index) => {
-                    const isLast = index === node.children.length - 1;
-                    formatDirItem(child, '', [isLast]);
-                });
-            }
-        } else {
-            const connector = isLastArray[isLastArray.length - 1] ? SYMBOLS.last : SYMBOLS.tee;
-            const cleanName = cleanFileName(node.name);
-            result += `${prefix}${connector}${cleanName}\n`;
-
-            if (node.children && node.children.length > 0) {
-                node.children.forEach((child, index) => {
-                    const isLast = index === node.children.length - 1;
-                    const newPrefix = prefix + (isLastArray[isLastArray.length - 1] ? SYMBOLS.space : SYMBOLS.branch);
-                    formatDirItem(child, newPrefix, [...isLastArray, isLast]);
-                });
-            }
-        }
     }
 
     function formatDirectoryTree(dir) {
@@ -1057,128 +1069,7 @@
 
     // 添加获取全部内容的函数
     async function fetchAllContent(uk, msgId, fsId, gid, title, depth) {
-        const startTime = performance.now();
-        const progressBar = createProgressBar();
-        progressBar.show();
-
-        let result = {
-            name: title,
-            children: [],
-            level: 0,
-            isRoot: true,
-            isDir: true,
-            startTime: startTime
-        };
-
-        let totalItems = 0;
-        let processedItems = 0;
-
-        async function fetchContent(parentDir, currentDepth) {
-            if (currentDepth >= depth) return;
-
-            let page = 1;
-            let hasMore = true;
-            const allRecords = [];
-            const maxRetries = config.maxRetries;
-            const requestPool = new RequestPool();
-
-            while (hasMore) {
-                progressBar.updateText(`正在获取 "${parentDir.name}" 的第 ${page} 页数据...`);
-                console.log(`[${parentDir.name}] 正在获取第 ${page} 页数据...`);
-
-                const url = `https://pan.baidu.com/mbox/msg/shareinfo?from_uk=${encodeURIComponent(uk)}&msg_id=${encodeURIComponent(msgId)}&type=2&num=100&page=${page}&fs_id=${encodeURIComponent(parentDir.fs_id || fsId)}&gid=${encodeURIComponent(gid)}&limit=100&desc=1&clienttype=0&app_id=250528&web=1`;
-
-                let retryCount = 0;
-                let success = false;
-
-                while (retryCount < maxRetries && !success) {
-                    try {
-                        const data = await requestPool.add(async () => {
-                            const response = await fetch(url, { 
-                                timeout: 30000,
-                                headers: {
-                                    'Cache-Control': 'no-cache',
-                                    'Pragma': 'no-cache'
-                                }
-                            });
-                            if (!response.ok) {
-                                throw new Error(`HTTP error! status: ${response.status}`);
-                            }
-                            return response.json();
-                        });
-
-                        if (data.errno !== 0) {
-                            throw new Error(`API error: ${data.errno}`);
-                        }
-
-                        allRecords.push(...data.records);
-                        hasMore = data.has_more === 1;
-                        success = true;
-
-                        console.log(`[${parentDir.name}] 第 ${page} 页获取成功，本页记录数: ${data.records.length}，hasMore: ${hasMore}`);
-                    } catch (error) {
-                        retryCount++;
-                        console.error(`[${parentDir.name}] 页面 ${page} 获取失败 (${retryCount}/${maxRetries})`);
-                        
-                        if (retryCount < maxRetries) {
-                            const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // 指数退避策略
-                            progressBar.updateText(`请求失败，${delay/1000}秒后重试...`);
-                            await new Promise(resolve => setTimeout(resolve, delay));
-                        } else {
-                            progressBar.updateText(`获取 "${parentDir.name}" 第 ${page} 页失败，跳过...`);
-                            console.error(`[${parentDir.name}] 达到重试上限，跳过`);
-                            hasMore = false; 
-                        }
-                    }
-                }
-
-                if (success) {
-                    page++;
-                    // 成功后也适当延迟，避免请求过快
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                }
-            }
-
-            // 处理所有记录（包括文件和目录）
-            totalItems += allRecords.length;
-            
-            const promises = allRecords.map(async record => {
-                const childItem = {
-                    name: record.server_filename,
-                    fs_id: record.fs_id,
-                    isDir: parseInt(record.isdir) === 1,
-                    size: record.size,
-                    children: [],
-                    level: currentDepth + 1,
-                    parentLevel: currentDepth
-                };
-                parentDir.children.push(childItem);
-
-                if (childItem.isDir && currentDepth + 1 < depth) {
-                    await fetchContent(childItem, currentDepth + 1);
-                }
-                
-                processedItems++;
-                progressBar.updateProgress(processedItems, totalItems);
-            });
-
-            await Promise.all(promises);
-        }
-
-        try {
-            await fetchContent(result, 0);
-            progressBar.updateText('内容获取完成！');
-            setTimeout(() => progressBar.hide(), 2000);
-            
-            return {
-                tree: result,
-                startTime: startTime
-            };
-        } finally {
-            progressBar.remove();
-            result = null;
-            cleanup();
-        }
+        return fetchContent(uk, msgId, fsId, gid, title, depth, 'all');
     }
 
     function formatAllContent(dir) {
