@@ -119,6 +119,13 @@
                 <input type="number" id="defaultDepth" value="${config.defaultDepth}" min="1" 
                     style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
             </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: flex; align-items: center; color: #666; cursor: pointer;">
+                    <input type="checkbox" id="showDirSize" ${config.showDirSize ? 'checked' : ''} 
+                        style="margin-right: 8px; width: 16px; height: 16px;">
+                    显示目录大小（仅在导出全部时生效）
+                </label>
+            </div>
             <div style="text-align: right; border-top: 1px solid #eee; padding-top: 16px;">
                 <button id="saveConfig" 
                     style="padding: 8px 24px; background: #06a7ff; color: white; border: none; border-radius: 4px; cursor: pointer; transition: all 0.3s;">
@@ -141,40 +148,58 @@
             });
         });
 
-        // 绑定事件
-        document.getElementById('saveConfig').onclick = function() {
+        // 创建一个通用的关闭面板函数
+        const closePanel = () => {
+            // 重置面板内容为当前保存的配置
+            document.getElementById('maxConcurrent').value = config.maxConcurrent;
+            document.getElementById('requestInterval').value = config.requestInterval;
+            document.getElementById('maxRetries').value = config.maxRetries;
+            document.getElementById('defaultDepth').value = config.defaultDepth;
+            document.getElementById('showDirSize').checked = config.showDirSize;
+            
+            panel.style.display = 'none';
+            const configButton = document.querySelector('#nbnt-config-button');
+            if (configButton) {
+                configButton.classList.remove('is-select');
+            }
+        };
+
+        // 保存配置并关闭面板
+        const saveAndClose = () => {
             config.maxConcurrent = parseInt(document.getElementById('maxConcurrent').value);
             config.requestInterval = parseInt(document.getElementById('requestInterval').value);
             config.maxRetries = parseInt(document.getElementById('maxRetries').value);
             config.defaultDepth = parseInt(document.getElementById('defaultDepth').value);
+            config.showDirSize = document.getElementById('showDirSize').checked;
             saveConfig();
-            panel.style.display = 'none';
-            document.querySelector('#nbnt-config-button').classList.remove('is-select');
-        };
-
-        document.getElementById('closeConfig').onclick = function() {
-            panel.style.display = 'none';
-            document.querySelector('#nbnt-config-button').classList.remove('is-select'); 
-        };
+            closePanel();
+        };        
+        
+        // 绑定事件
+        document.getElementById('saveConfig').onclick = saveAndClose;
+        document.getElementById('closeConfig').onclick = closePanel;
 
         // 添加点击外部关闭面板
-        document.addEventListener('click', function(e) {
-            if (!panel.contains(e.target) && 
-                !e.target.closest('#nbnt-config-button')) {
-                panel.style.display = 'none';
-                document.querySelector('#nbnt-config-button').classList.remove('is-select');  // 移除高亮状态
+        const handleOutsideClick = function(e) {
+            if (!panel.contains(e.target) && !e.target.closest('#nbnt-config-button')) {
+                closePanel();
             }
-        });
+        };
+
+        // 添加事件监听器
+        document.addEventListener('click', handleOutsideClick);        
 
         return {
             show: () => panel.style.display = 'block',
-            hide: () => {
-                panel.style.display = 'none';
-                document.querySelector('#nbnt-config-button').classList.remove('is-select');  // 移除高亮状态
+            hide: closePanel,
+            destroy: () => {
+                document.removeEventListener('click', handleOutsideClick);
+                if (panel.parentNode) {
+                    panel.parentNode.removeChild(panel);
+                }
             }
         };
     }
-
     // 添加进度条组件
     function createProgressBar() {
         const progressContainer = document.createElement('div');
@@ -297,6 +322,9 @@
                 // 如果配置按钮已存在则移除
                 if (existingConfigButton) {
                     existingConfigButton.remove();
+                    if (window.currentConfigPanel) {
+                        window.currentConfigPanel.destroy();
+                    }
                 }
 
                 // 添加样式
@@ -443,6 +471,7 @@
                 document.head.appendChild(tooltipStyle);
 
                 const configPanel = createConfigPanel();
+                window.currentConfigPanel = configPanel;
                 configButton.onclick = () => {
                     const isActive = configButton.classList.contains('is-select');
                     if (isActive) {
@@ -1037,6 +1066,7 @@
             children: [],
             level: 0,
             isRoot: true,
+            isDir: true,
             startTime: startTime
         };
 
@@ -1172,9 +1202,27 @@
         let dirCount = 0;
         let totalSize = 0;
 
+        // 计算每个目录的总大小
+        function calculateDirSize(node) {
+            let size = 0;
+            if (!node.isDir) {
+                return parseInt(node.size) || 0;
+            }
+            if (node.children && node.children.length > 0) {
+                node.children.forEach(child => {
+                    size += calculateDirSize(child);
+                });
+            }
+            node.totalSize = size;
+            return size;
+        }
+
+        calculateDirSize(dir);
+        
         function formatItem(node, prefix = '', isLastArray = []) {
             if (node.isRoot) {
-                result += `${cleanFileName(node.name)}/\n`;
+                const sizeStr = config.showDirSize ? ` (${formatSize(node.totalSize || 0)})` : '';
+                result += `${cleanFileName(node.name)}/${sizeStr}\n`;
                 if (node.children && node.children.length > 0) {
                     node.children.forEach((child, index) => {
                         const isLast = index === node.children.length - 1;
@@ -1185,15 +1233,21 @@
                 const connector = isLastArray[isLastArray.length - 1] ? SYMBOLS.last : SYMBOLS.tee;
                 const cleanName = cleanFileName(node.name);
                 const itemName = node.isDir ? `${cleanName}/` : cleanName;
-                const size = !node.isDir ? ` (${formatSize(node.size)})` : '';
+                let sizeStr = '';
+
+                if (node.isDir) {
+                    sizeStr = config.showDirSize ? ` (${formatSize(node.totalSize || 0)})` : '';
+                } else {
+                    sizeStr = ` (${formatSize(parseInt(node.size) || 0)})`;
+                }
                 
-                result += `${prefix}${connector}${itemName}${size}\n`;
+                result += `${prefix}${connector}${itemName}${sizeStr}\n`;
 
                 if (node.isDir) {
                     dirCount++;
                 } else {
                     fileCount++;
-                    totalSize += node.size || 0;
+                    totalSize += parseInt(node.size) || 0;
                 }
 
                 if (node.children && node.children.length > 0) {
