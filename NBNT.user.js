@@ -980,8 +980,31 @@
         return name.replace(/[\u200b\u200c\u200d\u200e\u200f\ufeff]/g, '');
     }
 
+    // 添加通用的排序函数
+    function sortTreeNodes(node) {
+        if (node.children && node.children.length > 0) {
+            node.children.sort((a, b) => {
+                const numA = extractNumber(a.name);
+                const numB = extractNumber(b.name);
+                
+                if (numA !== numB) {
+                    return numA - numB;
+                }
+                return a.name.localeCompare(b.name, 'zh-CN');
+            });
+            node.children.forEach(sortTreeNodes);
+        }
+    }    
+
+    function extractNumber(str) {
+        const match = str.match(/^(\d+)\./);
+        return match ? parseInt(match[1]) : Infinity;
+    }    
+
     function formatDirectoryTree(dir) {
         const formatStartTime = performance.now();
+        // 在格式化之前先排序
+        sortTreeNodes(dir);
         const SYMBOLS = {
             space:  '    ',
             branch: '│   ',
@@ -1074,6 +1097,8 @@
 
     function formatAllContent(dir) {
         const formatStartTime = performance.now();
+        // 在格式化之前先排序
+        sortTreeNodes(dir);
         let result = '';
         const currentTime = new Date().toLocaleString();
         
@@ -1240,22 +1265,7 @@
         excelData.push(headers);
         
         const allRows = [];
-        
-        function extractNumber(str) {
-            const match = str.match(/^(\d+)\./);
-            return match ? parseInt(match[1]) : Infinity;
-        }
 
-        function compareItems(a, b) {
-            const numA = extractNumber(a.name);
-            const numB = extractNumber(b.name);
-            
-            if (numA !== numB) {
-                return numA - numB;
-            }
-            
-            return a.name.localeCompare(b.name, 'zh-CN');
-        }
 
         function processNode(node, level = 0, parentRow = []) {
             if (level >= actualDepth) return;
@@ -1269,21 +1279,19 @@
             
             if (node.children && node.children.length > 0) {
                 if (node.isRoot) {
-                    node.children.sort(compareItems);
+                    sortTreeNodes(node); 
                     node.children.forEach(child => {
                         const newRow = new Array(actualDepth).fill('');
                         newRow[0] = child.name;
                         allRows.push([...newRow]);
                         
                         if (child.children && child.children.length > 0) {
-                            child.children.sort(compareItems);
                             child.children.forEach(grandChild => {
                                 processNode(grandChild, 1, newRow);
                             });
                         }
                     });
                 } else {
-                    node.children.sort(compareItems);
                     node.children.forEach(child => {
                         processNode(child, level + 1, currentRow);
                     });
