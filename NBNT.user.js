@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NBNT: 新版百度网盘共享文件库目录导出工具
 // @namespace    http://tampermonkey.net/
-// @version      0.269
+// @version      0.270
 // @description  用于导出百度网盘共享文件库目录和文件列表
 // @author       UJiN
 // @license      MIT
@@ -93,6 +93,35 @@
             display: none;
             font-family: "Microsoft YaHei", sans-serif;
         `;
+
+        // 添加标签页样式
+        const style = document.createElement('style');
+        style.textContent = `
+            .config-tabs {
+                display: flex;
+                border-bottom: 1px solid #ddd;
+                margin-bottom: 20px;
+            }
+            .config-tab {
+                padding: 8px 16px;
+                cursor: pointer;
+                color: #666;
+                border-bottom: 2px solid transparent;
+                margin-bottom: -1px;
+            }
+            .config-tab.active {
+                color: #06a7ff;
+                border-bottom-color: #06a7ff;
+            }
+            .config-content {
+                display: none;
+            }
+            .config-content.active {
+                display: block;
+            }
+        `;
+        document.head.appendChild(style);
+
         panel.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h3 style="margin: 0; font-size: 16px; color: #333;">NBNT 配置</h3>
@@ -100,39 +129,47 @@
                     <i class="u-icon-close" style="font-size: 16px; color: #666;"></i>
                 </button>
             </div>
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 8px; color: #666;">最大并发请求数</label>
-                <input type="number" id="maxConcurrent" value="${config.maxConcurrent}" min="1" max="5" 
-                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+            <div class="config-tabs">
+                <div class="config-tab active" data-tab="features">功能设置</div>
+                <div class="config-tab" data-tab="params">参数设置</div>
             </div>
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 8px; color: #666;">请求间隔(毫秒)</label>
-                <input type="number" id="requestInterval" value="${config.requestInterval}" min="1000" step="500" 
-                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+            <div id="featuresContent" class="config-content active">
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; color: #666;">目录分级样式</label>
+                    <select id="indentStyle" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+                        <option value="tree" ${config.indentStyle === 'tree' ? 'selected' : ''}>树形样式 (├── │   └──)</option>
+                        <option value="tab" ${config.indentStyle === 'tab' ? 'selected' : ''}>制表符 (Tab)</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: flex; align-items: center; color: #666; cursor: pointer;">
+                        <input type="checkbox" id="showDirSize" ${config.showDirSize ? 'checked' : ''} 
+                            style="margin-right: 8px; width: 16px; height: 16px;">
+                        显示目录大小（仅在导出全部时生效）
+                    </label>
+                </div>
             </div>
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 8px; color: #666;">最大重试次数</label>
-                <input type="number" id="maxRetries" value="${config.maxRetries}" min="1" max="5" 
-                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
-            </div>
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 8px; color: #666;">默认获取层数</label>
-                <input type="number" id="defaultDepth" value="${config.defaultDepth}" min="1" 
-                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
-            </div>
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 8px; color: #666;">目录分级样式</label>
-                <select id="indentStyle" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
-                    <option value="tree" ${config.indentStyle === 'tree' ? 'selected' : ''}>树形样式 (├── │   └──)</option>
-                    <option value="tab" ${config.indentStyle === 'tab' ? 'selected' : ''}>制表符 (Tab)</option>
-                </select>
-            </div>
-            <div style="margin-bottom: 20px;">
-                <label style="display: flex; align-items: center; color: #666; cursor: pointer;">
-                    <input type="checkbox" id="showDirSize" ${config.showDirSize ? 'checked' : ''} 
-                        style="margin-right: 8px; width: 16px; height: 16px;">
-                    显示目录大小（仅在导出全部时生效）
-                </label>
+            <div id="paramsContent" class="config-content">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; color: #666;">最大并发请求数</label>
+                    <input type="number" id="maxConcurrent" value="${config.maxConcurrent}" min="1" max="5" 
+                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; color: #666;">请求间隔(毫秒)</label>
+                    <input type="number" id="requestInterval" value="${config.requestInterval}" min="1000" step="500" 
+                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; color: #666;">最大重试次数</label>
+                    <input type="number" id="maxRetries" value="${config.maxRetries}" min="1" max="5" 
+                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; color: #666;">默认获取层数</label>
+                    <input type="number" id="defaultDepth" value="${config.defaultDepth}" min="1" 
+                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+                </div>
             </div>
             <div style="text-align: right; border-top: 1px solid #eee; padding-top: 16px;">
                 <button id="saveConfig" 
@@ -142,6 +179,19 @@
             </div>
         `;
         document.body.appendChild(panel);
+
+        // 添加标签页切换功能
+        const tabs = panel.querySelectorAll('.config-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                const contents = panel.querySelectorAll('.config-content');
+                contents.forEach(content => content.classList.remove('active'));
+                panel.querySelector(`#${tab.dataset.tab}Content`).classList.add('active');
+            });
+        });        
 
         // 添加输入框焦点样式
         const inputs = panel.querySelectorAll('input[type="number"]');
@@ -164,6 +214,7 @@
             document.getElementById('maxRetries').value = config.maxRetries;
             document.getElementById('defaultDepth').value = config.defaultDepth;
             document.getElementById('showDirSize').checked = config.showDirSize;
+            document.getElementById('indentStyle').value = config.indentStyle;
             
             panel.style.display = 'none';
             const configButton = document.querySelector('#nbnt-config-button');
