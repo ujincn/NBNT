@@ -62,7 +62,8 @@
         maxConcurrent: 2,           // 最大并发请求数
         requestInterval: 3000,      // 请求间隔(毫秒)
         maxRetries: 3,             // 最大重试次数
-        defaultDepth: 1           // 默认获取层数
+        defaultDepth: 1,           // 默认获取层数
+        indentStyle: 'tree'        // 目录分级样式：tree（树形）或 tab（制表符）
     };
 
     // 获取配置（如果没有则使用默认值）
@@ -120,6 +121,13 @@
                     style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
             </div>
             <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #666;">目录分级样式</label>
+                <select id="indentStyle" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: all 0.3s;">
+                    <option value="tree" ${config.indentStyle === 'tree' ? 'selected' : ''}>树形样式 (├── │   └──)</option>
+                    <option value="tab" ${config.indentStyle === 'tab' ? 'selected' : ''}>制表符 (Tab)</option>
+                </select>
+            </div>
+            <div style="margin-bottom: 20px;">
                 <label style="display: flex; align-items: center; color: #666; cursor: pointer;">
                     <input type="checkbox" id="showDirSize" ${config.showDirSize ? 'checked' : ''} 
                         style="margin-right: 8px; width: 16px; height: 16px;">
@@ -171,6 +179,7 @@
             config.maxRetries = parseInt(document.getElementById('maxRetries').value);
             config.defaultDepth = parseInt(document.getElementById('defaultDepth').value);
             config.showDirSize = document.getElementById('showDirSize').checked;
+            config.indentStyle = document.getElementById('indentStyle').value;
             saveConfig();
             closePanel();
         };        
@@ -1005,11 +1014,17 @@
         const formatStartTime = performance.now();
         // 在格式化之前先排序
         sortTreeNodes(dir);
-        const SYMBOLS = {
+
+        const SYMBOLS = config.indentStyle === 'tree' ? {
             space:  '    ',
             branch: '│   ',
             tee:    '├──',
             last:   '└──'
+        } : {
+            space:  '\t',
+            branch: '\t',
+            tee:    '',
+            last:   ''
         };
         
         let result = '';
@@ -1028,11 +1043,13 @@
                 if (node.children && node.children.length > 0) {
                     node.children.forEach((child, index) => {
                         const isLast = index === node.children.length - 1;
-                        formatDir(child, '', [isLast]);
+                        formatDir(child, SYMBOLS.space, [isLast]);
                     });
                 }
             } else {
-                const connector = isLastArray[isLastArray.length - 1] ? SYMBOLS.last : SYMBOLS.tee;
+                const connector = config.indentStyle === 'tree'
+                    ? (isLastArray[isLastArray.length - 1] ? SYMBOLS.last : SYMBOLS.tee)
+                    : '';
                 result += `${prefix}${connector}${cleanFileName(node.name)}\n`;
 
                 if (node.children && node.children.length > 0) {
@@ -1102,11 +1119,16 @@
         let result = '';
         const currentTime = new Date().toLocaleString();
         
-        const SYMBOLS = {
+        const SYMBOLS = config.indentStyle === 'tree' ? {
             space:  '    ',
             branch: '│   ',
             tee:    '├──',
             last:   '└──'
+        } : {
+            space:  '\t',
+            branch: '\t',
+            tee:    '',
+            last:   ''
         };
         
         result += `完整目录结构导出清单\n`;
@@ -1142,11 +1164,13 @@
                 if (node.children && node.children.length > 0) {
                     node.children.forEach((child, index) => {
                         const isLast = index === node.children.length - 1;
-                        formatItem(child, '', [isLast]);
+                        formatItem(child, SYMBOLS.space, [isLast]);
                     });
                 }
             } else {
-                const connector = isLastArray[isLastArray.length - 1] ? SYMBOLS.last : SYMBOLS.tee;
+                const connector = config.indentStyle === 'tree'
+                    ? (isLastArray[isLastArray.length - 1] ? SYMBOLS.last : SYMBOLS.tee)
+                    : '';
                 const cleanName = cleanFileName(node.name);
                 const itemName = node.isDir ? `${cleanName}/` : cleanName;
                 let sizeStr = '';
