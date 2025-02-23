@@ -28,7 +28,7 @@
 ## 安装
 
 1. 安装 [Tampermonkey](https://www.tampermonkey.net/) 或其他油猴脚本管理器。
-2. 点击[这里](https://raw.githubusercontent.com/ujincn/NBNT/v2/NBNT.user.js)或者[这里](https://update.greasyfork.org/scripts/520280/NBNT%3A%20%E6%96%B0%E7%89%88%E7%99%BE%E5%BA%A6%E7%BD%91%E7%9B%98%E5%85%B1%E4%BA%AB%E6%96%8C%E4%BB%B6%E5%BA%93%E7%9B%AE%E5%BD%95%E5%AF%BC%E5%87%BA%E5%B7%A5%E5%85%B7.user.js)安装脚本。
+2. 点击[这里](https://raw.githubusercontent.com/ujincn/NBNT/v2/NBNT.user.js)或者[这里](https://update.greasyfork.org/scripts/520280/NBNT%3A%20%E6%96%B0%E7%89%88%E7%99%BE%E5%BA%A6%E7%BD%91%E7%9B%98%E5%85%B1%E4%BA%AB%E6%96%87%E4%BB%B6%E5%BA%93%E7%9B%AE%E5%BD%95%E5%AF%BC%E5%87%BA%E5%B7%A5%E5%85%B7.user.js)安装脚本。
 3. 如果上一步没有成功，则将文件下载到本地进行手动安装。
 4. 打开脚本管理器，选择“添加新脚本”。
 5. 将 `NBNT.user.js` 文件中的代码复制粘贴到新建脚本中。
@@ -36,23 +36,27 @@
 
 ## 使用方法
 
-1. 打开百度网盘网页版
-![img01](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/01.png)
+1. 打开百度网盘网页版  
+![img01](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/01.png)  
+
 2. 进入共享文件库页面
-![img02](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/02.png) ![img03](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/03.png)
-3. 选择要导出的目录
+![img02](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/02.png)  ![img03](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/03.png)
+
+3. 选择要导出的目录  
 ![img04](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/04.png)
-4. 点击工具栏中的按钮：
-   -a. 【检查目录】：查看选中目录基本信息
-   -b. 【导出目录】：仅导出选中目录及子目录结构
-   -c. 【导出全部】：导出选中目录及子目录和文件列表
-   -d. 【配置面板】：打开配置面板，可以设置导出格式和其他参数
+
+4. 点击工具栏中的按钮  
+- a. 【检查目录】：查看选中目录基本信息
+- b. 【导出目录】：仅导出选中目录及子目录结构
+- c. 【导出全部】：导出选中目录及子目录和文件列表
+- d. 【配置面板】：打开配置面板，可以设置导出格式和其他参数
 ![img05](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/05.png)
-5. 配置面板说明：
-   - 功能设置：可以选择目录分级样式（树形或制表符）和是否显示目录大小
-   ![config01](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/config01.png)
-   - 参数设置：可以调整并发请求数、请求间隔等技术参数
-   ![config02](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/config02.png)
+
+5. 配置面板说明
+- 功能设置：可以选择目录分级样式（树形或制表符）和是否显示目录大小  
+![config01](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/config01.png)  
+- 参数设置：可以调整并发请求数、请求间隔等技术参数  
+![config02](https://raw.githubusercontent.com/ujincn/NBNT/v2/imgs/config02.png)
 
 ## 注意事项
 
@@ -63,6 +67,7 @@
 ## 导出示例
 
 ### 目录结构导出清单示例
+<details>
 
 ```
 目录结构导出清单示例
@@ -91,8 +96,10 @@
 格式化耗时：0.00 秒
 总处理耗时：5.40 秒
 ```
+</details>
 
 ### 完整目录结构导出清单示例
+<details>
 
 ```
 完整目录结构导出清单示例
@@ -133,6 +140,7 @@
 格式化耗时：0.15 秒
 总处理耗时：25.32 秒
 ```
+</details>
 
 
 ## 贡献
